@@ -10,10 +10,13 @@
     "web": "expo start --web"
   },
   "dependencies": {
-    "expo": "~52.0.10",
-    "expo-status-bar": "~2.0.0",
+    "@supabase/supabase-js": "^2.49.1",
+    "expo": "^52.0.37",
+    "expo-speech": "~13.0.1",
+    "expo-status-bar": "~2.0.1",
     "react": "18.3.1",
-    "react-native": "0.76.2"
+    "react-native": "0.76.7",
+    "react-native-tts": "^4.1.1"
   },
   "devDependencies": {
     "@babel/core": "^7.20.0",

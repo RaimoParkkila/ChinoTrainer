@@ -1,151 +1,208 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, FlatList, StyleSheet, Alert } from 'react-native';
+import { createClient } from '@supabase/supabase-js';
+import Constants from 'expo-constants';
+import * as Speech from 'expo-speech';
 
-// Lataa JSON-tiedosto (käytä oikeaa polkua)
-const questionsData = require('./assets/data/questions.json');
+const supabaseUrl = Constants.expoConfig?.extra?.supabaseUrl;
+const supabaseAnonKey = Constants.expoConfig?.extra?.supabaseAnonKey;
 
-type Question = {
-  id: string;
-  kysymys: string;
-  A: string;
-  B: string;
-  C: string;
-  D: string;
-  answer: string;
-};
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.error('Supabase URL or Anon Key is missing!');
+  throw new Error('Supabase URL or Anon Key is missing!');
+}
 
-const App = () => {
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+interface Question {
+  id: number;
+  question: string;
+  a: string;
+  b: string;
+  c: string;
+  d: string;
+  answer: 'A' | 'B' | 'C' | 'D';
+}
+
+export default function App() {
+  const [data, setData] = useState<Question[] | null>(null);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [score, setScore] = useState(0);
-  const [questions, setQuestions] = useState<Question[]>([]);
   const [answerFeedback, setAnswerFeedback] = useState<string>('');
 
-  // Lataa kysymykset JSON-tiedostosta
+  const speak = (text: string, lang: string) => {
+    Speech.speak(text, { language: lang });
+  };
   useEffect(() => {
-    const kysymykset = questionsData.find(
-      (item: any) => item.type === 'table' && item.name === 'kysymykset'
-    );
-    if (kysymykset && kysymykset.data) {
-      setQuestions(kysymykset.data); // Aseta kysymykset
-    }
-  }, []);
-
-  const handleAnswer = (selectedOption: string) => {
-    const currentQuestion = questions[currentQuestionIndex];
+    const fetchData = async () => {
+      const { data, error } = await supabase
+        .from('chinese')
+        .select('*');
   
-    // Varmistetaan, että kysymys on ladattu oikein
+      if (error) {
+        console.error('Error fetching data:', error);
+      } else {
+        setData(data);
+  
+        // Varmistetaan, että data on ladattu ja siinä on kysymyksiä
+        if (data && data.length > 0) {
+          const firstQuestion = data[0];
+  
+          // Soitetaan ensimmäinen kysymys ja sitten tervehdys
+          speak(firstQuestion.question, 'zh-CN'); // Puheeksi ensimmäinen kysymys kiinaksi
+          speak("¡Hola señor, bienvenido a esta aplicación dos!", "es-ES"); // Espanja
+        }
+      }
+    };
+  
+    fetchData();
+  }, []); // Varmistaa, että tämä suoritetaan vain kerran, kun komponentti ladataan
+  
+  useEffect(() => {
+    // Toistetaan aina, kun uusi kysymys valitaan
+    if (data && data.length > 0) {
+      const currentQuestion = data[currentQuestionIndex];
+      speak(currentQuestion.question, 'zh-CN'); // Kysymys kiinaksi
+    }
+  }, [currentQuestionIndex, data]); // Suoritetaan aina, kun kysymys vaihdetaan
+  
+  const handleAnswer = (selectedKey: 'A' | 'B' | 'C' | 'D') => {
+    const currentQuestion = data ? data[currentQuestionIndex] : null;
+  
     if (!currentQuestion) {
       return; // Jos ei ole kysymystä, ei tehdä mitään
     }
   
-    // Etsitään käyttäjän valitseman vastauksen avain
-    const selectedKey = Object.keys(currentQuestion).find(
-      key => currentQuestion[key] === selectedOption
-    );
+    // Hae oikea vastaus
+    const correctAnswerText = currentQuestion.answer; // Esim. "早上好 (Zǎoshang hǎo)"
   
-    // Oikean vastauksen avain ja arvo
-    const correctKey = currentQuestion.answer; // Esim. "A", "B", jne.
-    const correctValue = currentQuestion[correctKey]; // Esim. "Oikea vastaus"
+    // Hae valittu vastaus
+    const selectedAnswerText = currentQuestion[selectedKey.toLowerCase() as keyof Question];
   
-    if (selectedKey === correctKey) {
+    console.log(`Selected answer: ${selectedAnswerText}, Correct answer: ${correctAnswerText}`);
+  
+    // Oikea vastaus
+    if (selectedAnswerText === correctAnswerText) {
       setScore(prevScore => prevScore + 1); // Pisteen lisääminen
       setAnswerFeedback('Correct!'); // Näytetään palautteena "Oikein"
+      // Toistetaan espanjaksi "Oikein" ja sitten oikea kiinalainen vastaus
+      speak("Correct! La respuesta correcta es:", "es-ES");
+      speak(correctAnswerText, "zh-CN"); // Oikea vastaus kiinaksi
     } else {
       setAnswerFeedback(
-        `Wrong answer! The correct answer is: ${correctKey} - ${correctValue}`
-        
-      ); // Näytetään virheviesti ja oikea vastaus
+        `Wrong answer! The correct answer is: ${correctAnswerText}` // Näytetään virheviesti ja oikea vastaus
+      );
+      // Toistetaan espanjaksi: "Oikea vastaus olisi ollut..."
+      speak("La respuesta correcta habría sido:", "es-ES");
+      // Toistetaan oikea vastaus kiinaksi
+      speak(correctAnswerText, "zh-CN"); // Oikea vastaus kiinaksi
     }
   
-    // Siirrytään seuraavaan kysymykseen, jos niitä on jäljellä
-    if (currentQuestionIndex < questions.length - 1) {
+    // Siirrytään seuraavaan kysymykseen
+    if (currentQuestionIndex < (data ? data.length - 1 : 0)) {
       setTimeout(() => {
-        setAnswerFeedback(''); // Tyhjennetään palaute
-        setCurrentQuestionIndex(prevIndex => prevIndex + 1); // Siirrytään seuraavaan kysymykseen
-      }, 1000); // Asetetaan pieni viive ennen seuraavaan siirtymistä
+        setAnswerFeedback('');
+        setCurrentQuestionIndex(prevIndex => prevIndex + 1);
+      }, 1000);
     } else {
-      // Kaikki kysymykset on käyty läpi
       setTimeout(() => {
         Alert.alert(`Quiz Finished! Your score is: ${score + 1}`);
-        setScore(0); // Nollaa pisteet
-        setCurrentQuestionIndex(0); // Alusta kysymykset uudestaan
+        setScore(0);
+        setCurrentQuestionIndex(0);
       }, 1000);
     }
   };
   
   
+  
 
   const renderItem = ({ item }: { item: Question }) => (
-    <View style={styles.questionContainer}>
-      <Text style={styles.question}>{item.kysymys}</Text>
-      <TouchableOpacity onPress={() => handleAnswer(item.A)} style={styles.optionButton}>
-        <Text style={styles.optionText}>{item.A}</Text>
-      </TouchableOpacity>
-      <TouchableOpacity onPress={() => handleAnswer(item.B)} style={styles.optionButton}>
-        <Text style={styles.optionText}>{item.B}</Text>
-      </TouchableOpacity>
-      <TouchableOpacity onPress={() => handleAnswer(item.C)} style={styles.optionButton}>
-        <Text style={styles.optionText}>{item.C}</Text>
-      </TouchableOpacity>
-      <TouchableOpacity onPress={() => handleAnswer(item.D)} style={styles.optionButton}>
-        <Text style={styles.optionText}>{item.D}</Text>
-      </TouchableOpacity>
+    <View style={styles.item}>
+      <Text style={styles.question}>{item.question}A</Text>
+      <View style={styles.optionsContainer}>
+        <TouchableOpacity onPress={() => handleAnswer('A')} style={styles.optionButton}>
+          <Text style={styles.optionText}>A: {item.a || 'No option'}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => handleAnswer('B')} style={styles.optionButton}>
+          <Text style={styles.optionText}>B: {item.b || 'No option'}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => handleAnswer('C')} style={styles.optionButton}>
+          <Text style={styles.optionText}>C: {item.c || 'No option'}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => handleAnswer('D')} style={styles.optionButton}>
+          <Text style={styles.optionText}>D: {item.d || 'No option'}</Text>
+        </TouchableOpacity>
+      </View>
       <Text style={styles.feedback}>{answerFeedback}</Text>
     </View>
   );
 
   return (
     <View style={styles.container}>
-      <Text style={styles.score}>Score: {score}</Text>
-      {questions.length > 0 && (
+      <Text style={styles.title}>Welcome to the QuizApp!</Text>
+      <Text>Score: {score}</Text>
+      {data ? (
         <FlatList
-          data={questions.slice(currentQuestionIndex, currentQuestionIndex + 1)} // Renderöidään vain yksi kysymys kerrallaan
+          data={data ? [data[currentQuestionIndex]] : []}
           renderItem={renderItem}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item, index) => item.id ? item.id.toString() : index.toString()}
         />
+      ) : (
+        <Text>Loading...</Text>
       )}
     </View>
   );
-};
+}
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    paddingTop: 40,
+    paddingHorizontal: 20,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 16,
   },
-  questionContainer: {
-    marginBottom: 20,
+  title: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 30,
+  },
+  item: {
+    marginBottom: 40,
+    padding: 20,
+    backgroundColor: '#f9f9f9',
+    borderRadius: 10,
+    width: '100%',
     alignItems: 'center',
   },
   question: {
-    fontSize: 20,
+    fontSize: 26,
     fontWeight: 'bold',
-    marginBottom: 10,
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  optionsContainer: {
+    marginBottom: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: '100%',
   },
   optionButton: {
     backgroundColor: '#4CAF50',
-    padding: 10,
-    margin: 5,
-    borderRadius: 5,
-    width: 200,
+    padding: 20,
+    margin: 10,
+    borderRadius: 10,
+    width: '95%',
     alignItems: 'center',
   },
   optionText: {
     color: 'white',
-    fontSize: 16,
-  },
-  score: {
-    fontSize: 18,
-    marginTop: 20,
-    fontWeight: 'bold',
+    fontSize: 22,
   },
   feedback: {
-    fontSize: 16,
+    fontSize: 22,
     color: 'red',
-    marginTop: 10,
+    marginTop: 20,
   },
 });
-
-export default App;
